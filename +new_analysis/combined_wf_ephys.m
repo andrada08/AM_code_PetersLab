@@ -740,3 +740,145 @@ for stim_idx=1:length(unique_stims)
     sgtitle(['Stim ' num2str(unique_stims(stim_idx))])
 end
 
+%% FRAC resp
+
+p_thresh = 0.01;
+all_unit_resp_p_value = vertcat(ephys.unit_resp_p_value);
+
+% ger resp units
+all_resp_units = cell(numel(unique_stims), 1);
+cat_all_resp_units = cell(numel(unique_stims), 1);
+for stim_idx=1:length(unique_stims)
+    all_resp_units{stim_idx} = arrayfun(@(rep) [all_unit_resp_p_value{rep}{stim_idx}{:}] < p_thresh, ...
+        1:length(all_unit_resp_p_value), 'uni', false, 'ErrorHandler', @(x, varargin) []);
+    cat_all_resp_units{stim_idx} = horzcat(all_resp_units{stim_idx}{:})';
+end
+
+% get single units
+cat_all_single_units = vertcat(ephys.single_unit_idx{:});
+
+% get cell type 
+cat_all_msn_units = vertcat(ephys.str_msn_idx{:});
+
+% get unit depth group
+all_unit_depth_group = vertcat(ephys.unit_depth_group);
+
+% get unit cluster id based on unit depth group
+depth_group_edges = vertcat(ephys.depth_group_edges);
+depth_indexes = cellfun(@(x) 1:numel(x)-1, depth_group_edges, ...
+    'UniformOutput', false,'ErrorHandler', @(x, varargin) []);
+all_depth_indexes = horzcat(depth_indexes{:});
+
+% get per rec cluster ids 
+per_rec_cluster_ids = mat2cell(cluster_ids, n_depths);
+
+% get units cluster ids
+unit_cluster_ids = cell(length(per_rec_cluster_ids), 1);
+for rec_idx=1:length(unit_cluster_ids)
+    unit_depth = all_unit_depth_group{rec_idx};
+    cluster = per_rec_cluster_ids{rec_idx};
+
+    this_unit_cluster_ids = zeros(size(unit_depth));
+    this_unit_cluster_ids(~isnan(unit_depth)) = cluster(unit_depth(~isnan(unit_depth)));
+    unit_cluster_ids{rec_idx} = this_unit_cluster_ids;
+end
+all_unit_cluster_ids = vertcat(unit_cluster_ids{:});
+
+% make days from learning and animal grouping idx
+n_units = arrayfun(@(rec_idx) ...
+    size(ephys.unit_depth_group{rec_idx}, 1) * ~isempty(ephys.unit_depth_group{rec_idx}), ...
+    1:height(ephys));
+[~, ~, for_units_animal_ids] = unique(repelem(bhv.animal, n_units));
+for_units_days_from_learning = repelem(bhv.days_from_learning, n_units);
+for_units_combined_days_from_learning = for_units_days_from_learning;
+for_units_combined_days_from_learning(for_units_days_from_learning<-3) = -3;
+for_units_combined_days_from_learning(for_units_days_from_learning>2) = 2;
+
+% - group per cluster
+use_days_units = ~isnan(for_units_combined_days_from_learning);
+unit_group_indices = [for_units_animal_ids(use_days_units), ...
+    all_unit_cluster_ids(use_days_units), ...
+    for_units_combined_days_from_learning(use_days_units), ...
+    cat_all_msn_units(use_days_units)];
+[unit_group_indices_unique_clusters, ~, unit_group_clusters_indices] = unique(unit_group_indices, 'rows');
+
+% get frac resp units
+num_resp_units = cell(numel(unique_stims), 1);
+num_all_units = cell(numel(unique_stims), 1);
+for stim_idx=1:length(unique_stims)
+    num_resp_units{stim_idx} = ap.groupfun(@sum, ...
+        cat_all_resp_units{stim_idx}(use_days_units),  unit_group_clusters_indices, []);
+    num_all_units{stim_idx} = ap.groupfun(@length, ...
+        cat_all_resp_units{stim_idx}(use_days_units),  unit_group_clusters_indices, []);
+end
+frac_resp_units = arrayfun(@(stim_idx) num_resp_units{stim_idx}./num_all_units{stim_idx}, ...
+    1:length(unique_stims), 'UniformOutput', false);
+
+% - group per mouse and get avg
+unit_avg_animal_unit_group_indices = unit_group_indices_unique_clusters(:,2:4);
+[unit_unique_avg_animal_group_indices, ~, unit_animal_group_clusters_indices] = unique(unit_avg_animal_unit_group_indices, 'rows');
+
+num_animals_stim_unit = cell(numel(unique_stims), 1);
+for stim_idx = 1:numel(unique_stims)
+    num_animals_stim_unit{stim_idx} = accumarray(unit_animal_group_clusters_indices, 1);
+end
+
+avg_frac_resp_units = cell(numel(unique_stims), 1);
+std_frac_resp_units = cell(numel(unique_stims), 1);
+sem_frac_resp_units = cell(numel(unique_stims), 1);
+for stim_idx=1:length(unique_stims)
+    avg_frac_resp_units{stim_idx} = ap.groupfun(@mean, ...
+        frac_resp_units{stim_idx}, unit_animal_group_clusters_indices, []);
+    std_frac_resp_units{stim_idx} = ap.groupfun(@std, ...
+        frac_resp_units{stim_idx}, unit_animal_group_clusters_indices, []);
+    sem_frac_resp_units{stim_idx} = std_frac_resp_units{stim_idx} ./ sqrt(num_animals_stim_unit{stim_idx});
+end
+
+%% - plot frac resp
+
+curr_color = 'k';
+% max_colormap = ap.colormap('BKR', 2*max(abs(days_for_plot))+1);
+% colormap_days = -max(abs(days_for_plot)):max(abs(days_for_plot));
+
+for stim_idx=1:length(unique_stims)
+
+    figure;
+    tiledlayout(num_clusters,2);
+    for cluster_id = 1:num_clusters
+
+        nexttile;
+        imagesc(squeeze(centroid_images(cluster_id,:,:)))
+        axis image;
+        clim(max(abs(clim)).*[-1,1]*0.7);
+        ap.wf_draw('ccf','k');
+        colormap(ap.colormap('PWG'));
+        ylabel(['Cluster ', num2str(cluster_id)], 'FontSize', 14, 'FontWeight','bold');
+
+
+        this_cluster_unit_idx = unit_unique_avg_animal_group_indices(:,1) == cluster_id;
+        good_units = unit_unique_avg_animal_group_indices(:,3) == 1;
+        these_days_from_learning = unit_unique_avg_animal_group_indices(good_units & this_cluster_unit_idx, 2);
+        for_plot_avg_frac = avg_frac_resp_units{stim_idx}(this_cluster_unit_idx & good_units);
+        for_plot_sem_frac = sem_frac_resp_units{stim_idx}(this_cluster_unit_idx & good_units);
+
+        % get right colours
+        %     my_colormap = all_colormap(ismember(colormap_days, plotted_days), :);
+
+        % get num animals for legen
+        num_animals_plotted = num_animals_stim_unit{stim_idx}(this_cluster_unit_idx & good_units);
+
+        % make legend
+        legend_for_plot = arrayfun(@(day, num) ['Day ' num2str(day) ' (n = ' num2str(num) ')'], ...
+            these_days_from_learning, num_animals_plotted, 'UniformOutput', false);
+
+        nexttile;
+        errorbar(these_days_from_learning, for_plot_avg_frac, for_plot_sem_frac, '-o', 'CapSize', 0, ...
+            'MarkerFaceColor', curr_color, 'MarkerEdgeColor', curr_color, 'Color', curr_color);
+
+        ylim([0,0.25])
+        title(['Cluster ' num2str(cluster_id)])
+
+    end
+    frac_resp_title = ['Frac resp units for stim ' num2str(unique_stims(stim_idx))];
+    sgtitle(frac_resp_title, 'FontSize', 20);
+ end
