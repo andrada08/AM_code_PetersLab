@@ -316,6 +316,7 @@ str_1_all_trace = cell2mat(arrayfun(@(unit_idx) histcounts(spike_times_timelite(
     unique_curr_spike_templates, 'UniformOutput',false)) / bin_window;
 str_1_mua_trace = mean(str_1_all_trace, 1)';
 
+gauss_win = gausswin(51, 3)';
 smooth_str_1_mua_trace = filter(gauss_win,sum(gauss_win),str_1_mua_trace, [], 1);
 
 % figure; plot(smooth_str_1_mua_trace)
