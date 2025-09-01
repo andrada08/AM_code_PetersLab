@@ -31,6 +31,7 @@ ylim([-4000 6000])
 xlim([150 300]) % day 2
 % xlim([350 500]) % day before end
 AP_scalebar(20, 2000)
+saveas(gcf,'D:\corel_test\figure1a.svg')
 
 align_times = photodiode_times(1:2:end);
 surround_time = [-4,4];
@@ -68,6 +69,25 @@ ax.YAxis.FontSize = 30;  % Set Y-axis tick label font size
 % Set specific intervals for ticks to make them more sparse
 xticks([-4, -2, 0, 2, 4]); % 5 ticks on X-axis
 yticks([20, 40, 60, 80, 100, 120]); % Customize Y-axis tick intervals
+
+% Find the imagesc object
+hImage = findobj(gca,'Type','Image');
+% Hide the image only (heatmap), leave axes, ticks, labels, colorbar, title visible
+set(hImage,'Visible','off');
+% Export SVG with painters (vector elements only)
+print(gcf, '-dsvg', '-painters', 'D:\corel_test\figure1b_overlay.svg');
+% Turn the image back on if needed
+set(hImage,'Visible','on');
+
+% Hide text/axes temporarily for clean raster
+set(gca,'XTickLabel',[],'YTickLabel',[]);
+xlabel(''); ylabel('');
+title('');
+print(gcf, '-dpng', '-r600', 'D:\corel_test\figure1b_raster.png')
+% Restore text/labels for display
+xlabel('Time from stim onset (100ms)', 'FontSize', 38)
+ylabel('Trial sorted by RT', 'FontSize', 38)
+title('Day 2', 'FontSize', 18)
 
 % figure;
 % imagesc(surround_time_points,[],stim_aligned_wheel_move)
